@@ -19,9 +19,26 @@ import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Search } from 'lucide-react';
 
+
+import RackModal from './RackModal';
+
+/*// Użyj tego komponentu w głównym komponencie DataCenterFloorPlan
+
+<RackModal
+  rack={selectedRack}
+  isOpen={isModalOpen}
+  onClose={() => {
+    setIsModalOpen(false);
+    setSelectedServerInModal(null);
+  }}
+  selectedServer={selectedServerInModal}
+  onSelectServer={setSelectedServerInModal}
+/>
+
+:*/
 // Dodajemy style dla tooltipa
 const tooltipStyles = `
-  .rack-tooltip {
+  .tooltip {
     position: absolute;
     background: rgba(0, 0, 0, 0.9);
     color: white;
@@ -32,9 +49,21 @@ const tooltipStyles = `
     z-index: 1000;
     white-space: nowrap;
     border: 1px solid #333;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  .server-details {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    background: rgba(0, 0, 0, 0.95);
+    border: 1px solid #444;
+    padding: 16px;
+    border-radius: 8px;
+    width: 300px;
   }
 `;
 
+// Definicje modeli serwerów
 const SERVER_MODELS = {
   'DELL-R730': {
     name: 'Dell PowerEdge R730',
@@ -64,19 +93,39 @@ const SERVER_MODELS = {
   }
 };
 
+// Funkcja generująca bardziej realistyczne dane serwerów
 function generateServers(count, location) {
   const models = Object.keys(SERVER_MODELS);
+  const statuses = ['Active', 'Maintenance', 'Warning', 'Error'];
+  const manufacturers = ['Dell', 'HPE'];
+  const cpuTypes = ['Intel Xeon Gold 6330', 'AMD EPYC 7763'];
+  const randomDate = () => {
+    const start = new Date(2020, 0, 1);
+    const end = new Date();
+    return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+  };
+
   return Array.from({ length: count }, (_, i) => ({
     id: `SRV-${location}-${i + 1}`,
     name: `SERVER-${location}-${i + 1}`,
     model: models[Math.floor(Math.random() * models.length)],
+    serialNumber: `SN${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+    manufacturer: manufacturers[Math.floor(Math.random() * manufacturers.length)],
+    cpuType: cpuTypes[Math.floor(Math.random() * cpuTypes.length)],
+    cpuCount: Math.floor(Math.random() * 2) + 1,
+    ramTotal: [128, 256, 512][Math.floor(Math.random() * 3)],
     powerUsage: Math.round(Math.random() * 500) + 300,
     cpuUsage: Math.round(Math.random() * 100),
     ramUsage: Math.round(Math.random() * 100),
-    position: i + 1
+    position: i + 1,
+    status: statuses[Math.floor(Math.random() * statuses.length)],
+    installDate: randomDate(),
+    lastMaintenance: randomDate()
   }));
 }
 
+
+// Generator szaf pozostaje podobny, ale dodajemy więcej metadanych
 function generateRacks() {
   const racks = [];
   const ROWS = 16;
@@ -89,11 +138,14 @@ function generateRacks() {
       racks.push({
         id: `rack-${row}-${col}`,
         location,
-        x: 50 + col * 20,
+        x: 50 + col * 25,
         y: 50 + row * 20,
-        width: 14,
-        height: 8,
+        width: 18,
+        height: 12,
         powerUsage,
+        maxPower: 2000,
+        temperature: Math.round(Math.random() * 10 + 20), // 20-30°C
+        humidity: Math.round(Math.random() * 20 + 40), // 40-60%
         color: `rgba(${Math.round((powerUsage - 100) / 1400 * 255)}, ${Math.round((1500 - powerUsage) / 1400 * 255)}, 0, 0.6)`,
         servers: generateServers(Math.floor(Math.random() * 20) + 10, location)
       });
@@ -110,83 +162,100 @@ const MOCK_DATA = {
 };
 
 const DataCenterFloorPlan = () => {
+  // Podstawowe stany
   const [selectedFloor, setSelectedFloor] = useState(MOCK_DATA.floors[0]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [powerRange, setPowerRange] = useState([100, 1500]);
-  const [activeSearch, setActiveSearch] = useState("");
-  const [selectedRack, setSelectedRack] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRacks, setSelectedRacks] = useState([]);
+  const [selectedServers, setSelectedServers] = useState([]);
+
+  // Stany dla tooltipów
   const [tooltipContent, setTooltipContent] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const [selectedRacks, setSelectedRacks] = useState([]);
 
-  // Przygotuj listę wszystkich szaf do wyboru
+  // Stany dla modalu
+  const [selectedRack, setSelectedRack] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedServerInModal, setSelectedServerInModal] = useState(null);
+
+  // Memoizowane listy
+  const allServers = useMemo(() => 
+    selectedFloor.racks.flatMap(rack => 
+      rack.servers.map(server => ({
+        value: server.id,
+        label: server.name,
+        rackLocation: rack.location
+      }))
+    ).sort((a, b) => a.label.localeCompare(b.label))
+  , [selectedFloor]);
+
   const allRacks = useMemo(() => 
     selectedFloor.racks.map(rack => ({
       value: rack.location,
-      label: `${rack.location} (${rack.powerUsage}W)`
+      label: `${rack.location} (${rack.powerUsage}W)`,
+      powerUsage: rack.powerUsage
     })).sort((a, b) => a.value.localeCompare(b.value))
   , [selectedFloor]);
 
+  // Filtrowane szafy
   const filteredRacks = useMemo(() => 
-    selectedFloor.racks.filter(rack => 
-      rack.powerUsage >= powerRange[0] && 
-      rack.powerUsage <= powerRange[1] &&
-      (activeSearch ? rack.servers.some(server => 
-        server.name.toLowerCase().includes(activeSearch.toLowerCase())
-      ) : true) &&
-      (selectedRacks.length === 0 || selectedRacks.includes(rack.location))
-    ), [selectedFloor.racks, powerRange, activeSearch, selectedRacks]);
+    selectedFloor.racks.filter(rack => {
+      const powerFilter = rack.powerUsage >= powerRange[0] && rack.powerUsage <= powerRange[1];
+      const rackFilter = selectedRacks.length === 0 || selectedRacks.includes(rack.location);
+      const serverFilter = selectedServers.length === 0 || 
+        rack.servers.some(server => selectedServers.includes(server.id));
+      
+      return powerFilter && (rackFilter || serverFilter);
+    })
+  , [selectedFloor.racks, powerRange, selectedRacks, selectedServers]);
 
-  const handleMouseMove = (e, rack) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipContent({
-      location: rack.location,
-      powerUsage: rack.powerUsage,
-      serverCount: rack.servers.length
-    });
-    setTooltipPosition({
-      x: rect.left + window.scrollX + rack.width + 10,
-      y: rect.top + window.scrollY
-    });
+  // Handlery
+  const handleRackClick = (rack) => {
+    setSelectedRack(rack);
+    setSelectedServerInModal(null); // Resetujemy wybrany serwer przy otwieraniu nowej szafy
+    setIsModalOpen(true);
   };
 
-  const handleMouseLeave = () => {
-    setTooltipContent(null);
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedServerInModal(null);
+    setSelectedRack(null);
+  };
+
+  const handleServerSelect = (server) => {
+    setSelectedServerInModal(server);
   };
 
   return (
     <div className="min-h-screen bg-black text-gray-200">
-      <style>{tooltipStyles}</style>
       <div className="p-4 space-y-4">
-        <div className="flex flex-wrap gap-4">
-          {/* Istniejące kontrolki */}
+        {/* Kontrolki wyszukiwania */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Select 
-            value={selectedFloor.id.toString()} 
-            onValueChange={(value) => setSelectedFloor(MOCK_DATA.floors.find(f => f.id.toString() === value))}
+            multiple
+            value={selectedServers}
+            onValueChange={setSelectedServers}
           >
-            <SelectTrigger className="w-48 bg-gray-800 text-white">
-              <SelectValue placeholder="Wybierz piętro" />
+            <SelectTrigger className="w-full bg-gray-800 text-white">
+              <SelectValue placeholder="Wybierz serwery..." />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {MOCK_DATA.floors.map(floor => (
-                  <SelectItem key={floor.id} value={floor.id.toString()}>
-                    {floor.name}
+                {allServers.map(server => (
+                  <SelectItem key={server.value} value={server.value}>
+                    {server.label} ({server.rackLocation})
                   </SelectItem>
                 ))}
               </SelectGroup>
             </SelectContent>
           </Select>
 
-          {/* Wielokrotny wybór szaf */}
           <Select 
             multiple
             value={selectedRacks}
             onValueChange={setSelectedRacks}
           >
-            <SelectTrigger className="w-96 bg-gray-800 text-white">
-              <SelectValue placeholder="Wybierz szafy rackowe..." />
+            <SelectTrigger className="w-full bg-gray-800 text-white">
+              <SelectValue placeholder="Wybierz szafy..." />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -198,34 +267,48 @@ const DataCenterFloorPlan = () => {
               </SelectGroup>
             </SelectContent>
           </Select>
-
-          {/* Pozostałe kontrolki */}
-          {/* ... */}
         </div>
 
-        {/* Wyświetlanie wybranych szaf */}
-        {selectedRacks.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {selectedRacks.map(rackId => {
-              const rack = selectedFloor.racks.find(r => r.location === rackId);
-              return (
-                <span 
-                  key={rackId} 
-                  className="px-3 py-1 bg-gray-800 rounded-full text-sm"
-                >
-                  {rackId} ({rack?.powerUsage}W)
-                </span>
-              );
-            })}
-          </div>
-        )}
+        {/* Wyświetlanie wybranych elementów */}
+        <div className="flex flex-wrap gap-2">
+          {selectedServers.map(serverId => {
+            const server = allServers.find(s => s.value === serverId);
+            return (
+              <span key={serverId} className="px-3 py-1 bg-gray-800 rounded-full text-sm">
+                {server?.label}
+              </span>
+            );
+          })}
+          {selectedRacks.map(rackId => {
+            const rack = allRacks.find(r => r.value === rackId);
+            return (
+              <span key={rackId} className="px-3 py-1 bg-gray-700 rounded-full text-sm">
+                {rack?.label}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Slider zakresu mocy */}
+        <div className="flex items-center gap-4">
+          <span>Zakres mocy:</span>
+          <Slider
+            min={100}
+            max={1500}
+            step={50}
+            value={powerRange}
+            onValueChange={setPowerRange}
+            className="w-80"
+          />
+          <span>{powerRange[0]}W - {powerRange[1]}W</span>
+        </div>
 
         {/* Plan piętra */}
         <Card className="bg-gray-900">
           <CardContent className="p-6">
             <svg width="1200" height="600" viewBox="0 0 1200 600">
               <rect width="1200" height="600" fill="#111" />
-              {/* Siatka */}
+              {/* Grid */}
               <g stroke="#333" strokeWidth="0.5">
                 {Array.from({ length: 60 }, (_, i) => (
                   <line key={`v-${i}`} x1={25 * i} y1={0} x2={25 * i} y2={600} />
@@ -234,16 +317,27 @@ const DataCenterFloorPlan = () => {
                   <line key={`h-${i}`} x1={0} y1={20 * i} x2={1200} y2={20 * i} />
                 ))}
               </g>
-              {/* Szafy */}
+              {/* Racks */}
               {filteredRacks.map(rack => (
                 <g 
-                  key={rack.id} 
-                  onClick={() => {
-                    setSelectedRack(rack);
-                    setIsModalOpen(true);
+                  key={rack.id}
+                  onClick={() => handleRackClick(rack)}
+                  onMouseEnter={(e) => {
+                    setTooltipContent(
+                      <div>
+                        <div>Lokalizacja: {rack.location}</div>
+                        <div>Moc: {rack.powerUsage}W / {rack.maxPower}W</div>
+                        <div>Temperatura: {rack.temperature}°C</div>
+                        <div>Liczba serwerów: {rack.servers.length}</div>
+                      </div>
+                    );
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltipPosition({
+                      x: rect.left + window.scrollX + rack.width + 10,
+                      y: rect.top + window.scrollY
+                    });
                   }}
-                  onMouseMove={(e) => handleMouseMove(e, rack)}
-                  onMouseLeave={handleMouseLeave}
+                  onMouseLeave={() => setTooltipContent(null)}
                   className="cursor-pointer"
                 >
                   <rect
@@ -274,70 +368,26 @@ const DataCenterFloorPlan = () => {
         {/* Tooltip */}
         {tooltipContent && (
           <div 
-            className="rack-tooltip"
+            className="tooltip"
             style={{
               left: `${tooltipPosition.x}px`,
               top: `${tooltipPosition.y}px`
             }}
           >
-            <div>Lokalizacja: {tooltipContent.location}</div>
-            <div>Zużycie energii: {tooltipContent.powerUsage}W</div>
-            <div>Liczba serwerów: {tooltipContent.serverCount}</div>
+            {tooltipContent}
           </div>
         )}
 
-        {/* Modal pozostaje bez zmian */}
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogContent className="max-w-6xl bg-gray-900">
-            <DialogHeader>
-              <DialogTitle className="text-white">
-                Szafa {selectedRack?.location} ({selectedRack?.powerUsage}W)
-              </DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="border border-gray-700 rounded p-4">
-                <h3 className="text-sm font-semibold mb-2">Widok szafy</h3>
-                <svg width="400" height="800" viewBox="0 0 400 800">
-                  <rect width="400" height="800" fill="#111" />
-                  {selectedRack?.servers.map((server, index) => (
-                    <g key={server.id} transform={`translate(50, ${50 + index * 45})`}>
-                      {SERVER_MODELS[server.model].svg}
-                    </g>
-                  ))}
-                </svg>
-              </div>
-              <div className="overflow-auto max-h-[600px]">
-                <table className="w-full">
-                  <thead className="bg-gray-800 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Nazwa</th>
-                      <th className="px-4 py-2 text-left">Model</th>
-                      <th className="px-4 py-2 text-left">Pozycja</th>
-                      <th className="px-4 py-2 text-left">Moc</th>
-                      <th className="px-4 py-2 text-left">CPU</th>
-                      <th className="px-4 py-2 text-left">RAM</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700">
-                    {selectedRack?.servers.map(server => (
-                      <tr key={server.id} className="hover:bg-gray-800">
-                        <td className="px-4 py-2">{server.name}</td>
-                        <td className="px-4 py-2">{SERVER_MODELS[server.model].name}</td>
-                        <td className="px-4 py-2">{server.position}U</td>
-                        <td className="px-4 py-2">{server.powerUsage}W</td>
-                        <td className="px-4 py-2">{server.cpuUsage}%</td>
-                        <td className="px-4 py-2">{server.ramUsage}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Modal */}
+        <RackModal
+          rack={selectedRack}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          selectedServer={selectedServerInModal}
+          onSelectServer={handleServerSelect}
+        />
       </div>
     </div>
   );
 };
-
 export default DataCenterFloorPlan;

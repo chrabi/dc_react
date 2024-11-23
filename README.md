@@ -40,11 +40,11 @@ src/index.cssClick to open code
 
 Zmodyfikuj src/App.jsx aby używał naszego komponentu:
 
-src/App.jsxClick to open code
+src/App.jsx Click to open code
 
 Wszystkie komponenty shadcn/ui (Card, Dialog, Select, etc.) muszą być zainstalowane. Możesz je zainstalować używając:
 
-bashCopynpx shadcn-ui@latest init
+npx shadcn-ui@latest init
 npx shadcn-ui@latest add card
 npx shadcn-ui@latest add dialog
 npx shadcn-ui@latest add select
@@ -52,10 +52,18 @@ npx shadcn-ui@latest add input
 npx shadcn-ui@latest add button
 npx shadcn-ui@latest add slider
 
+C:\Svg_project\datacenter-app>npx shadcn@latest add badge    
+✔ Checking registry.
+✔ Created 1 file:
+  - src\components\ui\badge.tsx
+  
 Skopiuj wcześniej wygenerowany kod komponentu DataCenterFloorPlan do pliku src/components/DataCenterFloorPlan.jsx
 Teraz możesz uruchomić aplikację:
 
-bashCopynpm run dev
+cd C:\Svg_project\datacenter-app
+
+cd C:\Svg_project\datacenter-app>npm run dev   
+npm run dev
 Aplikacja powinna być dostępna pod adresem http://localhost:5173
 Jeśli napotkasz jakieś błędy, sprawdź:
 
@@ -65,7 +73,7 @@ Czy wszystkie komponenty shadcn/ui zostały prawidłowo zainstalowane
 Czy importy w komponentach wskazują na właściwe ścieżki
 
 Możesz też użyć create-react-app zamiast Vite:
-bashCopynpx create-react-app datacenter-app
+ npx create-react-app datacenter-app
 cd datacenter-app
 npm install [wszystkie-zaleznosci]
 npm start
