@@ -288,7 +288,52 @@ const DataCenterFloorPlan = () => {
 
         {/* Modal pozostaje bez zmian */}
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          {/* ... (poprzedni kod modalu) ... */}
+          <DialogContent className="max-w-6xl bg-gray-900">
+            <DialogHeader>
+              <DialogTitle className="text-white">
+                Szafa {selectedRack?.location} ({selectedRack?.powerUsage}W)
+              </DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-700 rounded p-4">
+                <h3 className="text-sm font-semibold mb-2">Widok szafy</h3>
+                <svg width="400" height="800" viewBox="0 0 400 800">
+                  <rect width="400" height="800" fill="#111" />
+                  {selectedRack?.servers.map((server, index) => (
+                    <g key={server.id} transform={`translate(50, ${50 + index * 45})`}>
+                      {SERVER_MODELS[server.model].svg}
+                    </g>
+                  ))}
+                </svg>
+              </div>
+              <div className="overflow-auto max-h-[600px]">
+                <table className="w-full">
+                  <thead className="bg-gray-800 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Nazwa</th>
+                      <th className="px-4 py-2 text-left">Model</th>
+                      <th className="px-4 py-2 text-left">Pozycja</th>
+                      <th className="px-4 py-2 text-left">Moc</th>
+                      <th className="px-4 py-2 text-left">CPU</th>
+                      <th className="px-4 py-2 text-left">RAM</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {selectedRack?.servers.map(server => (
+                      <tr key={server.id} className="hover:bg-gray-800">
+                        <td className="px-4 py-2">{server.name}</td>
+                        <td className="px-4 py-2">{SERVER_MODELS[server.model].name}</td>
+                        <td className="px-4 py-2">{server.position}U</td>
+                        <td className="px-4 py-2">{server.powerUsage}W</td>
+                        <td className="px-4 py-2">{server.cpuUsage}%</td>
+                        <td className="px-4 py-2">{server.ramUsage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </DialogContent>
         </Dialog>
       </div>
     </div>
